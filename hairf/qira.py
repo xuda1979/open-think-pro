@@ -8,6 +8,7 @@ from typing import Callable, Iterable, List, Sequence
 import math
 
 from .base import ReasoningModule
+from .inference import LLMConfig, LLMCallError, MissingCredentialsError, ensure_llm_config, generate_text
 from .types import Query, ReasoningState
 
 StateGenerator = Callable[[Query, Sequence[ReasoningState]], Iterable[ReasoningState]]
@@ -47,6 +48,7 @@ class QIRAConfig:
     generator: StateGenerator = default_generator
     collapse: CollapseStrategy = default_collapse
     superposition_temperature: float = 0.7
+    llm_config: LLMConfig | None = None
 
 
 class QIRAReasoner(ReasoningModule):
@@ -57,12 +59,15 @@ class QIRAReasoner(ReasoningModule):
     def __init__(self, config: QIRAConfig | None = None) -> None:
         super().__init__()
         self.config = config or QIRAConfig()
+        if self.config.llm_config and not isinstance(self.config.llm_config, LLMConfig):
+            coerced = ensure_llm_config(self.config.llm_config)
+            self.config.llm_config = coerced
 
     def execute(
         self, query: Query, *, context: Sequence[ReasoningState] | None = None
     ) -> Iterable[ReasoningState]:
         context = context or []
-        candidates = list(self.config.generator(query, context))
+        candidates = list(self._generate_candidates(query, context))
         if not candidates:
             return []
 
@@ -70,6 +75,66 @@ class QIRAReasoner(ReasoningModule):
         collapsed = self.config.collapse(superposed)
 
         return [collapsed]
+
+    def _generate_candidates(
+        self, query: Query, context: Sequence[ReasoningState]
+    ) -> Iterable[ReasoningState]:
+        llm_config = self._resolve_llm_config(query)
+        if llm_config is None:
+            yield from self.config.generator(query, context)
+            return
+
+        prompt = self._compose_prompt(query, context)
+        try:
+            response = generate_text(prompt, llm_config)
+        except MissingCredentialsError:
+            yield from self.config.generator(query, context)
+            return
+        except LLMCallError as error:
+            yield ReasoningState(
+                content=f"LLM {error.provider}/{error.model} call failed: {error.message}",
+                confidence=0.25,
+                cost=1.0,
+                metadata={
+                    "provider": error.provider,
+                    "model": error.model,
+                    "llm_error": error.message,
+                },
+            )
+            return
+
+        metadata = {"provider": response.provider, "model": response.model}
+        if response.raw is not None:
+            metadata["llm_raw"] = response.raw
+        text = response.text.strip()
+        confidence = min(0.95, 0.6 + min(len(text) / 800, 0.3)) if text else 0.5
+        yield ReasoningState(
+            content=text or f"{response.provider}/{response.model} returned no text",
+            confidence=confidence,
+            cost=1.5,
+            metadata=metadata,
+        )
+
+    def _resolve_llm_config(self, query: Query) -> LLMConfig | None:
+        meta_config = query.metadata.get("llm_config") if query.metadata else None
+        resolved = None
+        if meta_config is not None:
+            try:
+                resolved = ensure_llm_config(meta_config)
+            except (TypeError, ValueError):
+                resolved = None
+        if resolved is None:
+            resolved = self.config.llm_config
+        return resolved
+
+    def _compose_prompt(
+        self, query: Query, context: Sequence[ReasoningState]
+    ) -> str:
+        if not context:
+            return query.text
+        relevant = context[-3:]
+        context_text = "\n".join(state.content for state in relevant)
+        return f"{query.text}\n\nContext:\n{context_text}"
 
     def _superpose(self, candidates: Sequence[ReasoningState]) -> List[ReasoningState]:
         weights = self._softmax([state.confidence for state in candidates])

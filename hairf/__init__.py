@@ -16,6 +16,7 @@ from .engine import ModularExecutionEngine
 from .aggregator import OutputAggregator
 from .framework import HAIRF
 from .learning import ExperienceReplayLearner
+from .inference import LLMConfig, ensure_llm_config, generate_text
 
 __all__ = [
     "AdaptiveRouter",
@@ -26,6 +27,9 @@ __all__ = [
     "OutputAggregator",
     "QIRAReasoner",
     "Query",
+    "LLMConfig",
+    "ensure_llm_config",
+    "generate_text",
     "ReasoningModule",
     "ReasoningResult",
     "ReasoningState",
