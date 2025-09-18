@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from .engine import ModularExecutionEngine
+from .inference import LLMConfig, ensure_llm_config
 from .learning import Experience, ExperienceReplayLearner
 from .modules import ChainOfThoughtReasoner, ReflectiveCritic, SelfConsistencyReasoner
 from .qira import QIRAReasoner
@@ -16,11 +17,12 @@ from .dcmn import DynamicContextualMemoryNetwork
 class HAIRF:
     """Reference implementation that wires together the HAIRF components."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, default_llm: LLMConfig | str | dict[str, object] | None = None) -> None:
         self.memory = DynamicContextualMemoryNetwork()
         self.router = AdaptiveRouter()
         self.engine = ModularExecutionEngine()
         self.learner = ExperienceReplayLearner()
+        self.default_llm = ensure_llm_config(default_llm)
         self._register_default_modules()
 
     def _register_default_modules(self) -> None:
@@ -45,7 +47,13 @@ class HAIRF:
                 )
             )
 
-    def process(self, query: Query) -> ReasoningResult:
+    def process(
+        self, query: Query, *, llm: LLMConfig | str | dict[str, object] | None = None
+    ) -> ReasoningResult:
+        llm_config = self._resolve_llm_config(query, llm)
+        if llm_config is not None:
+            query = query.enrich(llm_config=llm_config.as_dict())
+
         self.memory.ingest("latest_query", query.text, boost=0.1)
         decision = self.router.route(query)
         modules = self.router.modules_for_decision(decision, self.modules)
@@ -72,3 +80,16 @@ class HAIRF:
             f"  Mean reward: {mean_reward:.3f}\n"
             f"  Max reward: {max_reward:.3f}"
         )
+
+    def _resolve_llm_config(
+        self, query: Query, override: LLMConfig | str | dict[str, object] | None
+    ) -> LLMConfig | None:
+        if override is not None:
+            return ensure_llm_config(override)
+        existing = query.metadata.get("llm_config") if query.metadata else None
+        if existing is not None:
+            try:
+                return ensure_llm_config(existing)
+            except (TypeError, ValueError):
+                return self.default_llm
+        return self.default_llm
