@@ -59,10 +59,40 @@ paper.tex            LaTeX source of the accompanying paper
 
 ## Getting Started
 
+### 1. Install dependencies
+
+The reference implementation only relies on the Python standard library for its core logic, so you can get started with any modern Python (>=3.10) interpreter. We still recommend working inside a virtual environment to keep experiments isolated:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt  # (not required for the standard-library-only demo)
+pip install -r requirements.txt  # optional: supply your own requirements file for additional tools
+pip install pytest              # install locally if you want to run the test suite
+```
+
+### 2. Configure API credentials
+
+HAIRF can call different hosted LLM providers via the thin wrappers in [`hairf/inference.py`](hairf/inference.py). Each client expects an API key to be supplied through environment variables. Set the variables for the providers you plan to use before running any scripts:
+
+| Provider | Required environment variable | Optional base URL override | Notes |
+|----------|-------------------------------|-----------------------------|-------|
+| OpenAI   | `OPENAI_API_KEY`              | `OPENAI_API_BASE`           | Uses the `/chat/completions` endpoint with bearer authentication. |
+| Gemini   | `GOOGLE_API_KEY`              | `GEMINI_API_BASE`           | Key is passed as a query parameter; bearer token is not required. |
+| DeepSeek | `DEEPSEEK_API_KEY`            | `DEEPSEEK_API_BASE`         | Default base URL is `https://api.deepseek.com/v1`. |
+| Qwen     | `QWEN_API_KEY`                | `QWEN_API_BASE`             | Targets the DashScope text-generation endpoint. |
+
+For example, on macOS/Linux you can export variables in your shell session:
+
+```bash
+export OPENAI_API_KEY="sk-your-key"
+export DEEPSEEK_API_KEY="ds-your-key"
+```
+
+When testing locally without network access, set the `offline` option in an `LLMConfig` to bypass the HTTP call and return a stub response.
+
+### 3. Run the test suite
+
+```bash
 pytest
 ```
 
@@ -91,6 +121,27 @@ print(result.answer)
 ```
 
 The unit tests validate that the router increases compute allocation for harder prompts, ensuring that the compute-optimal scheduler is wired into the decision flow.
+
+## Usage Example
+
+Below is a minimal snippet that wires the components together, providing a concrete example of how to prepare a query and request a completion from OpenAI (the same pattern applies to Gemini, DeepSeek, or Qwen by changing the provider/model fields):
+
+```python
+from hairf.framework import HAIRF
+from hairf.inference import LLMConfig
+
+framework = HAIRF()
+
+query = {
+    "prompt": "Summarise the main differences between transformers and RNNs.",
+    "llm": LLMConfig(provider="openai", model="gpt-4o", options={"temperature": 0.2}),
+}
+
+result = framework.run(query)
+print(result.answer)
+```
+
+`HAIRF.run` will automatically invoke DCMN for context retrieval, compute the appropriate budget, route across the configured reasoning modules, and call the specified LLM client using the credentials provided through environment variables.
 
 ## References
 
