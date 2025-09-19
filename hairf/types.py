@@ -96,3 +96,6 @@ class RoutingDecision:
     selected_modules: List[str]
     rationale: str
     estimated_cost: float
+    budget: int = 0
+    difficulty: float = 0.0
+    allocation: Dict[str, float] = field(default_factory=dict)
