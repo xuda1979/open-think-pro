@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Sequence, Tuple
 
 from .base import ReasoningModule
+from .compute_optimal import ComputeOptimalBudgeter, ComputePlan
 from .types import Query, RoutingDecision
 
 
@@ -30,9 +31,10 @@ class RouterRule:
 class AdaptiveRouter:
     """Select reasoning modules based on query semantics and past performance."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, scheduler: ComputeOptimalBudgeter | None = None) -> None:
         self._rules: List[RouterRule] = []
         self._performance: Dict[str, float] = {}
+        self._scheduler = scheduler or ComputeOptimalBudgeter()
 
     def register(self, rule: RouterRule) -> None:
         self._rules.append(rule)
@@ -42,26 +44,65 @@ class AdaptiveRouter:
         prev = self._performance.get(module_name, 0.0)
         self._performance[module_name] = 0.8 * prev + 0.2 * reward
 
-    def route(self, query: Query, *, budget: int = 3) -> RoutingDecision:
+    def route(self, query: Query, *, budget: int | None = None) -> RoutingDecision:
+        manual_budget = budget
+        plan: ComputePlan | None = None
+        if budget is None and self._scheduler is not None:
+            plan = self._scheduler.plan(
+                query,
+                performance=self._performance,
+                rules=self._rules,
+            )
+            budget = plan.budget
+        if budget is None:
+            budget = 3
+
+        candidates: List[tuple[float, RouterRule, float, float]] = []
+        for rule in self._rules:
+            if not rule.matches(query):
+                continue
+            if not rule.module.supports(query):
+                continue
+            perf_score = self._performance.get(rule.module.name, 0.5)
+            allocation = plan.allocation.get(rule.module.name, 0.0) if plan else 1.0
+            combined = perf_score * (1.0 + allocation) + rule.priority / 10.0
+            candidates.append((combined, rule, perf_score, allocation))
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+
         selected: List[str] = []
         rationale: List[str] = []
         estimated_cost = 0.0
 
-        for rule in self._rules:
+        if plan is not None:
+            rationale.append(plan.rationale)
+        elif manual_budget is not None:
+            rationale.append(f"fixed budget={budget}")
+
+        for combined, rule, perf_score, allocation in candidates:
             if len(selected) >= budget:
                 break
-            if rule.matches(query) and rule.module.supports(query):
-                score = self._performance.get(rule.module.name, 0.5)
-                rationale.append(
-                    f"selected {rule.module.name} (priority={rule.priority}, score={score:.2f})"
+            selected.append(rule.module.name)
+            estimated_cost += perf_score + allocation
+            rationale.append(
+                (
+                    f"selected {rule.module.name} "
+                    f"(score={perf_score:.2f}, weight={allocation:.2f}, priority={rule.priority})"
                 )
-                selected.append(rule.module.name)
-                estimated_cost += score
+            )
+
+        allocation = {name: (plan.allocation.get(name, 0.0) if plan else 0.0) for name in selected}
+        if estimated_cost == 0.0:
+            baseline = plan.difficulty if plan else 0.5
+            estimated_cost = max(0.1, float(budget) * max(0.1, baseline))
 
         return RoutingDecision(
             selected_modules=selected,
             rationale="; ".join(rationale) or "default route",
             estimated_cost=estimated_cost,
+            budget=budget,
+            difficulty=plan.difficulty if plan else 0.0,
+            allocation=allocation,
         )
 
     def modules_for_decision(

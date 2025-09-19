@@ -10,7 +10,7 @@ from .learning import Experience, ExperienceReplayLearner
 from .modules import ChainOfThoughtReasoner, ReflectiveCritic, SelfConsistencyReasoner
 from .qira import QIRAReasoner
 from .router import AdaptiveRouter, RouterRule
-from .types import Query, ReasoningResult
+from .types import Query, ReasoningResult, ReasoningState
 from .dcmn import DynamicContextualMemoryNetwork
 
 
@@ -57,7 +57,22 @@ class HAIRF:
         self.memory.ingest("latest_query", query.text, boost=0.1)
         decision = self.router.route(query)
         modules = self.router.modules_for_decision(decision, self.modules)
-        memory_states = list(self.memory.contextualize(query))
+        routing_state = ReasoningState(
+            content=(
+                f"Routing plan: budget={decision.budget}, "
+                f"difficulty={decision.difficulty:.2f}, "
+                f"modules={decision.selected_modules}"
+            ),
+            confidence=0.4 + 0.6 * min(1.0, decision.difficulty + 0.2),
+            cost=max(decision.estimated_cost, 0.1),
+            metadata={
+                "allocation": decision.allocation,
+                "budget": decision.budget,
+                "rationale": decision.rationale,
+            },
+        )
+        contextual_states = list(self.memory.contextualize(query))
+        memory_states = [routing_state, *contextual_states]
         traces, states = self.engine.execute(query, modules, context=memory_states)
         states = memory_states + states
         result = self.engine.finalize(query, traces, states)

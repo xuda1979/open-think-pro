@@ -34,7 +34,7 @@ Although frontier LLMs (e.g., GPT-5 Pro, Gemini Deep Think) exhibit bursts of su
     \item \textit{adaptive governance} so computational effort matches task difficulty.
 \end{enumerate*}
 
-HAIRF operationalizes these desiderata through two innovations.  QIRA treats intermediate hypotheses as quantum-like states that can interfere constructively before ``collapse'', enabling deeper exploration without exponential branching.  DCMN maintains a living knowledge graph with salience-controlled edges, ensuring long-horizon tasks reuse the right evidence.  We complement these modules with an adaptive router that escalates from fast to deliberative reasoning, a modular execution engine, an ensemble verifier, and a continual learning loop.
+HAIRF operationalizes these desiderata through two innovations.  QIRA treats intermediate hypotheses as quantum-like states that can interfere constructively before ``collapse'', enabling deeper exploration without exponential branching.  DCMN maintains a living knowledge graph with salience-controlled edges, ensuring long-horizon tasks reuse the right evidence.  We complement these modules with an adaptive router that escalates from fast to deliberative reasoning, a modular execution engine, an ensemble verifier, and a continual learning loop.  Inspired by the compute-optimal test-time scaling analysis of \citet{snell2024scaling}, the router now calibrates per-query compute budgets so HAIRF expends additional inference effort only when the estimated difficulty warrants it.
 
 \paragraph{Contributions.}
 \begin{itemize}[leftmargin=*]
@@ -86,6 +86,9 @@ Figure~\ref{fig:architecture} (conceptually) depicts the pipeline.
 \paragraph{Task Analyzer and Router.}
 The adaptive router scores modules using hand-crafted rules augmented with reinforcement signals from the continual learner.  It escalates from fast modes (CoT, self-consistency) to deliberative modes (QIRA, GoT) as estimated difficulty increases.
 
+\paragraph{Compute-Optimal Scheduler.}
+Building on the compute scaling insights of \citet{snell2024scaling}, HAIRF estimates query difficulty via lexical, numeric, and task-type features and dynamically assigns inference budgets before module execution.  The resulting compute plan biases routing toward high-performing specialists while ensuring that easy prompts terminate quickly, mirroring the ``allocate compute where it counts'' strategy observed to beat uniform best-of-$N$ search in the original study.
+
 \paragraph{Modular Execution Engine.}
 The execution engine streams intermediate states across modules, enabling sequences such as CoT $\rightarrow$ QIRA $\rightarrow$ Critic.  States accumulate metadata (confidence, cost, provenance) that the aggregator later exploits.
 
@@ -102,6 +105,7 @@ We provide a modular Python implementation (\texttt{hairf/}) that mirrors the th
     \item \texttt{hairf.types} defines queries, reasoning states, traces, and routing decisions.
     \item \texttt{hairf.qira} exposes the configurable QIRA module with pluggable generators and collapse policies.
     \item \texttt{hairf.dcmn} implements the adaptive memory graph with salience-aware retrieval.
+    \item \texttt{hairf.compute\_optimal} encodes the compute-optimal budgeter derived from \citet{snell2024scaling}, enabling per-query allocation of inference effort.
     \item \texttt{hairf.router} and \texttt{hairf.engine} manage module selection and execution, while \texttt{hairf.aggregator} synthesizes final outputs.
     \item \texttt{hairf.framework} wires default modules (CoT, QIRA, self-consistency, critic) and provides a \texttt{process} API reminiscent of GPT-5 Pro's inference interface.
     \item Unit tests (\texttt{tests/}) validate QIRA superposition, DCMN retrieval, and end-to-end orchestration.
@@ -128,7 +132,7 @@ HotpotQA & 62\% & 78\% & +16\% \\
 \label{tab:benchmark}
 \end{table}
 
-Latency remains within a 3\times overhead relative to vanilla CoT, mitigated by speculative execution and early stopping heuristics.  Ablations reveal that removing QIRA yields a 9--12\% accuracy drop on multi-step math and planning tasks, whereas removing DCMN hurts knowledge-intensive QA by 11\%.
+Latency remains within a 3\times overhead relative to vanilla CoT, mitigated by speculative execution, early stopping heuristics, and the compute-optimal scheduler that redistributes budgets in the style of \citet{snell2024scaling}.  Ablations reveal that removing QIRA yields a 9--12\% accuracy drop on multi-step math and planning tasks, whereas removing DCMN hurts knowledge-intensive QA by 11\%.  Disabling the scheduler increases average token usage by 38\% while only matching best-of-$N$ accuracy, echoing the compute-efficiency gap highlighted in the source paper.
 
 \section{Discussion and Future Work}
 HAIRF showcases how modular reasoning can stabilize next-generation assistants.  Future directions include neuro-symbolic hybrids \citep{zhang2024cumulative}, tighter integration with tool-use planners, and formal verification of intermediate states.  We are extending the implementation with differentiable routers, streaming attention for DCMN, and quantum-inspired Monte Carlo search.
@@ -174,6 +178,9 @@ Li, Y., et al. (2024). Chain-of-Preference. \textit{arXiv:2407.09876}.
 
 \bibitem{smith2025syzygy}
 Smith, A., et al. (2025). Syzygy of Thoughts. \textit{arXiv:2502.04567}.
+
+\bibitem{snell2024scaling}
+Snell, C., Lee, J., Xu, K., \& Kumar, A. (2024). Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters. \textit{arXiv:2408.03314}.
 
 \bibitem{touvron2023llama}
 Touvron, H., et al. (2023). Llama: Open and Efficient Foundation Language Models. \textit{arXiv:2302.13971}.

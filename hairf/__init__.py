@@ -12,6 +12,7 @@ from .base import ReasoningModule
 from .qira import QIRAReasoner
 from .dcmn import DynamicContextualMemoryNetwork
 from .router import AdaptiveRouter, RoutingDecision
+from .compute_optimal import ComputeOptimalBudgeter, ComputePlan
 from .engine import ModularExecutionEngine
 from .aggregator import OutputAggregator
 from .framework import HAIRF
@@ -20,6 +21,8 @@ from .inference import LLMConfig, ensure_llm_config, generate_text
 
 __all__ = [
     "AdaptiveRouter",
+    "ComputeOptimalBudgeter",
+    "ComputePlan",
     "DynamicContextualMemoryNetwork",
     "ExperienceReplayLearner",
     "HAIRF",
