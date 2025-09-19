@@ -66,6 +66,30 @@ pip install -r requirements.txt  # (not required for the standard-library-only d
 pytest
 ```
 
+### Command-line usage
+
+The project exposes a lightweight CLI so you can run the framework without
+writing Python code:
+
+```bash
+python -m hairf --open-think-pro "How does adaptive routing allocate compute?"
+```
+
+Use `--show-traces` to include per-module traces or `--summary` to print the
+running performance summary collected by the default framework instance.
+
+### Python API convenience helpers
+
+When importing the package you can call `hairf.answer_question` to route a
+question through a cached :class:`hairf.framework.HAIRF` instance:
+
+```python
+from hairf import answer_question
+
+result = answer_question("Explain compute-optimal scheduling.")
+print(result.answer)
+```
+
 The unit tests validate that the router increases compute allocation for harder prompts, ensuring that the compute-optimal scheduler is wired into the decision flow.
 
 ## References
