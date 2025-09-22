@@ -1,5 +1,12 @@
+import pytest
+
 from hairf.framework import HAIRF
-from hairf.inference import LLMConfig, ensure_llm_config, generate_text
+from hairf.inference import (
+    LLMConfig,
+    MissingCredentialsError,
+    ensure_llm_config,
+    generate_text,
+)
 from hairf.types import Query
 
 
@@ -20,6 +27,14 @@ def test_generate_text_with_mock(monkeypatch):
     response = generate_text("Hello", config)
     assert response.text == "Mock output"
     assert response.provider == "openai"
+
+
+def test_openai_missing_credentials_mentions_expected_env(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = LLMConfig(provider="openai", model="gpt-4o-mini")
+    with pytest.raises(MissingCredentialsError) as exc:
+        generate_text("Hello", config)
+    assert "OPENAI_API_KEY" in str(exc.value)
 
 
 def test_hairf_process_with_llm(monkeypatch):
