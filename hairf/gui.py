@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import tkinter as tk
 from tkinter import messagebox
@@ -25,6 +26,14 @@ _MODEL_OPTIONS: dict[str, Any] = {
 }
 
 
+_API_ENV_VARS: list[tuple[str, str]] = [
+    ("OpenAI", "OPENAI_API_KEY"),
+    ("Gemini", "GOOGLE_API_KEY"),
+    ("DeepSeek", "DEEPSEEK_API_KEY"),
+    ("Qwen", "QWEN_API_KEY"),
+]
+
+
 class HAIRFGui(ttk.Frame):
     """Main application frame used by :func:`run_gui`."""
 
@@ -35,6 +44,8 @@ class HAIRFGui(ttk.Frame):
 
         self.model_var = tk.StringVar(value=next(iter(_MODEL_OPTIONS)))
         self.query_var = tk.StringVar()
+        self._settings_window: tk.Toplevel | None = None
+        self._settings_vars: dict[str, tk.StringVar] = {}
 
         self._create_widgets()
 
@@ -43,6 +54,9 @@ class HAIRFGui(ttk.Frame):
         self.master.rowconfigure(0, weight=1)
         self.master.columnconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
+
+        # Menu bar
+        self._create_menu()
 
         # Model selector
         selector_frame = ttk.Frame(self)
@@ -76,6 +90,13 @@ class HAIRFGui(ttk.Frame):
         # Configure resizing
         self.rowconfigure(2, weight=1)
 
+    def _create_menu(self) -> None:
+        menubar = tk.Menu(self.master)
+        settings_menu = tk.Menu(menubar, tearoff=False)
+        settings_menu.add_command(label="API Keys…", command=self._open_settings_dialog)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        self.master.config(menu=menubar)
+
     def _on_submit_event(self, event: tk.Event | None = None) -> None:
         self._on_submit()
 
@@ -97,6 +118,90 @@ class HAIRFGui(ttk.Frame):
             daemon=True,
         )
         thread.start()
+
+    def _open_settings_dialog(self) -> None:
+        if self._settings_window and self._settings_window.winfo_exists():
+            self._settings_window.focus_set()
+            return
+
+        self._settings_window = tk.Toplevel(self)
+        self._settings_window.title("Configure API Keys")
+        self._settings_window.transient(self.master)
+        self._settings_window.resizable(False, False)
+        self._settings_window.grab_set()
+        self._settings_window.protocol("WM_DELETE_WINDOW", self._close_settings_dialog)
+
+        container = ttk.Frame(self._settings_window, padding=16)
+        container.grid(sticky=tk.NSEW)
+        container.columnconfigure(1, weight=1)
+
+        self._settings_vars = {}
+        first_entry: ttk.Entry | None = None
+        for row, (provider_label, env_var) in enumerate(_API_ENV_VARS):
+            ttk.Label(container, text=f"{provider_label} API key:").grid(
+                row=row, column=0, sticky=tk.W, padx=(0, 8), pady=(0, 8)
+            )
+            var = tk.StringVar(value=os.getenv(env_var, ""))
+            entry = ttk.Entry(container, textvariable=var, width=40)
+            entry.grid(row=row, column=1, sticky=tk.EW, pady=(0, 8))
+            self._settings_vars[env_var] = var
+            if first_entry is None:
+                first_entry = entry
+
+        if first_entry is not None:
+            first_entry.focus_set()
+
+        ttk.Label(
+            container,
+            text="Leave a field blank to clear the stored key for that provider.",
+        ).grid(row=len(_API_ENV_VARS), column=0, columnspan=2, sticky=tk.W, pady=(0, 12))
+
+        button_row = ttk.Frame(container)
+        button_row.grid(row=len(_API_ENV_VARS) + 1, column=0, columnspan=2, sticky=tk.E)
+
+        ttk.Button(button_row, text="Cancel", command=self._close_settings_dialog).grid(
+            row=0, column=0, padx=(0, 8)
+        )
+        ttk.Button(button_row, text="Save", command=self._save_settings).grid(row=0, column=1)
+
+    def _close_settings_dialog(self) -> None:
+        if self._settings_window is None:
+            return
+        try:
+            self._settings_window.grab_release()
+        except tk.TclError:
+            pass
+        self._settings_window.destroy()
+        self._settings_window = None
+        self._settings_vars = {}
+
+    def _save_settings(self) -> None:
+        updated_labels: list[str] = []
+        cleared_labels: list[str] = []
+        for provider_label, env_var in _API_ENV_VARS:
+            var = self._settings_vars.get(env_var)
+            value = var.get().strip() if var is not None else ""
+            if value:
+                os.environ[env_var] = value
+                updated_labels.append(provider_label)
+            else:
+                os.environ.pop(env_var, None)
+                cleared_labels.append(provider_label)
+
+        message_parts: list[str] = []
+        if updated_labels:
+            message_parts.append(
+                "Updated keys for: " + ", ".join(updated_labels)
+            )
+        if cleared_labels:
+            message_parts.append(
+                "Cleared keys for: " + ", ".join(cleared_labels)
+            )
+        if not message_parts:
+            message_parts.append("No changes were made to API keys.")
+
+        messagebox.showinfo("API keys updated", "\n".join(message_parts))
+        self._close_settings_dialog()
 
     def _process_question(self, question: str, llm_config: Any | None) -> None:
         try:
