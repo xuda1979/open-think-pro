@@ -77,7 +77,7 @@ HAIRF can call different hosted LLM providers via the thin wrappers in [`hairf/i
 | Provider | Required environment variable | Optional base URL override | Notes |
 |----------|-------------------------------|-----------------------------|-------|
 | OpenAI   | `OPENAI_API_KEY`              | `OPENAI_API_BASE`           | Uses the `/chat/completions` endpoint with bearer authentication. |
-| Gemini   | `GOOGLE_API_KEY`              | `GEMINI_API_BASE`           | Key is passed as a query parameter; bearer token is not required. |
+| Gemini   | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | `GEMINI_API_BASE`           | Key is passed as a query parameter; bearer token is not required. Pass either a bare model name (e.g. `gemini-2.0-flash`) or a full resource path such as `tunedModels/your-model-id`. |
 | DeepSeek | `DEEPSEEK_API_KEY`            | `DEEPSEEK_API_BASE`         | Default base URL is `https://api.deepseek.com/v1`. |
 | Qwen     | `QWEN_API_KEY`                | `QWEN_API_BASE`             | Targets the DashScope text-generation endpoint. |
 

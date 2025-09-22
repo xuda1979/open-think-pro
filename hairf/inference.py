@@ -228,10 +228,37 @@ class OpenAIClient(BaseLLMClient):
 
 class GeminiClient(BaseLLMClient):
     provider_name = "gemini"
-    api_key_env = "GOOGLE_API_KEY"
+    api_key_env = "GEMINI_API_KEY"
     base_url_env = "GEMINI_API_BASE"
     default_base_url = "https://generativelanguage.googleapis.com/v1beta"
     requires_bearer_token = False
+    alternate_api_key_env = "GOOGLE_API_KEY"
+
+    def __init__(self, *, api_key: str | None = None, base_url: str | None = None) -> None:
+        super().__init__(api_key=api_key, base_url=base_url)
+        if not self.api_key and self.alternate_api_key_env:
+            fallback = os.getenv(self.alternate_api_key_env, "")
+            if fallback:
+                self.api_key = fallback
+
+    @staticmethod
+    def _normalise_model_path(model: str) -> str:
+        """Return the API path component for ``model``.
+
+        Gemini exposes base models under ``models/{name}`` and tuned models under
+        ``tunedModels/{id}``. Vertex AI hosted Gemini models use fully qualified
+        resource names (``projects/.../locations/.../models/...``). To keep the
+        public API ergonomic we allow callers to pass either the bare model name
+        (``gemini-2.0-flash``) or the full resource path. This helper ensures we
+        only prefix bare names with ``models/`` and leave explicit paths intact.
+        """
+
+        model = model.strip()
+        if not model:
+            raise ValueError("Model name must be a non-empty string.")
+        if model.startswith(("models/", "tunedModels/", "projects/")):
+            return model
+        return f"models/{model}"
 
     def _perform_request(
         self,
@@ -240,10 +267,17 @@ class GeminiClient(BaseLLMClient):
         model: str,
         options: Mapping[str, Any],
     ) -> Dict[str, Any]:
-        api_key = self.api_key or os.getenv("GOOGLE_API_KEY")
+        api_key = self.api_key or os.getenv(self.api_key_env) or (
+            os.getenv(self.alternate_api_key_env, "") if self.alternate_api_key_env else ""
+        )
         if not api_key:
-            raise MissingCredentialsError(self.provider_name, self.api_key_env)
-        url = f"{self.base_url}/models/{model}:generateContent"
+            expected = self.api_key_env
+            if self.alternate_api_key_env:
+                expected = f"{expected} or {self.alternate_api_key_env}"
+            raise MissingCredentialsError(self.provider_name, expected)
+        self.api_key = api_key
+        model_path = self._normalise_model_path(model)
+        url = f"{self.base_url}/{model_path}:generateContent"
         query_string = parse.urlencode({"key": api_key})
         url = f"{url}?{query_string}"
         headers = {"Content-Type": "application/json"}
