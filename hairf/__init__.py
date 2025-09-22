@@ -16,6 +16,7 @@ from .compute_optimal import ComputeOptimalBudgeter, ComputePlan
 from .engine import ModularExecutionEngine
 from .aggregator import OutputAggregator
 from .api import answer_question, get_default_framework
+from .gui import HAIRFGui, run_gui
 from .framework import HAIRF
 from .learning import ExperienceReplayLearner
 from .inference import LLMConfig, ensure_llm_config, generate_text
@@ -27,6 +28,7 @@ __all__ = [
     "DynamicContextualMemoryNetwork",
     "ExperienceReplayLearner",
     "HAIRF",
+    "HAIRFGui",
     "answer_question",
     "get_default_framework",
     "ModularExecutionEngine",
@@ -40,4 +42,5 @@ __all__ = [
     "ReasoningResult",
     "ReasoningState",
     "RoutingDecision",
+    "run_gui",
 ]
